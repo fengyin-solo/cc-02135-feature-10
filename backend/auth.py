@@ -40,14 +40,19 @@ def rate_limit(f):
 
 
 def generate_token(username):
-    """生成并存储token"""
+    """生成并存储token。
+
+    同一用户重新登录时旧令牌立即撤销（令牌替换不留残余会话），
+    数据库中每个用户至多保留一条有效 token。
+    """
     token = str(uuid.uuid4())
     expires_at = time.time() + TOKEN_EXPIRE_SECONDS
 
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute('DELETE FROM tokens WHERE username = ?', (username,))
     cursor.execute(
-        'INSERT OR REPLACE INTO tokens (token, username, expires_at) VALUES (?, ?, ?)',
+        'INSERT INTO tokens (token, username, expires_at) VALUES (?, ?, ?)',
         (token, username, expires_at)
     )
     conn.commit()
@@ -57,24 +62,54 @@ def generate_token(username):
 
 def verify_token(token):
     """验证token"""
+    return get_token_info(token) is not None
+
+
+def get_token_info(token):
+    """返回有效 token 的 (username, expires_at)，无效或已过期返回 None。
+
+    过期的 token 记录会被立即删除，保证失效会话第一时间被收回。
+    """
+    if not token:
+        return None
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT expires_at FROM tokens WHERE token = ?', (token,))
+    cursor.execute('SELECT username, expires_at FROM tokens WHERE token = ?', (token,))
     row = cursor.fetchone()
 
     if row and row['expires_at'] > time.time():
         conn.close()
-        return True
+        return row['username'], row['expires_at']
 
     if row:
         cursor.execute('DELETE FROM tokens WHERE token = ?', (token,))
         conn.commit()
     conn.close()
-    return False
+    return None
+
+
+def revoke_token(token):
+    """主动撤销 token（退出登录），幂等"""
+    if not token:
+        return
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM tokens WHERE token = ?', (token,))
+    conn.commit()
+    conn.close()
+
+
+def extract_token():
+    """从请求中提取 token：优先 Authorization 头，兼容查询参数"""
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:].strip()
+    return request.args.get('token')
 
 
 def refresh_token(token):
-    """刷新token过期时间"""
+    """刷新token过期时间，成功返回新的过期时间戳，失败返回 None"""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('SELECT expires_at FROM tokens WHERE token = ?', (token,))
@@ -85,9 +120,9 @@ def refresh_token(token):
         cursor.execute('UPDATE tokens SET expires_at = ? WHERE token = ?', (new_expires, token))
         conn.commit()
         conn.close()
-        return True
+        return new_expires
     conn.close()
-    return False
+    return None
 
 
 def authenticate_user(username, password):
@@ -107,30 +142,17 @@ def authenticate_user(username, password):
 
 def get_username_from_token(token):
     """从 token 获取用户名"""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT username, expires_at FROM tokens WHERE token = ?', (token,))
-    row = cursor.fetchone()
-
-    if row and row['expires_at'] > time.time():
-        conn.close()
-        return row['username']
-
-    conn.close()
-    return None
+    info = get_token_info(token)
+    return info[0] if info else None
 
 
 def login_required(f):
     """登录认证装饰器"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-        else:
-            token = request.args.get('token')
+        token = extract_token()
 
-        if not token or not verify_token(token):
+        if not verify_token(token):
             return jsonify({'error': '未授权或token已过期'}), 401
 
         return f(*args, **kwargs)

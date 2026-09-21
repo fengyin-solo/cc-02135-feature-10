@@ -12,6 +12,7 @@
         <!-- 用户状态栏 -->
         <div id="userBar" class="user-bar hidden">
             <span class="user-info">
+                <span class="session-dot dot-restoring" id="sessionDot" title="会话状态"></span>
                 <span class="user-avatar" id="userAvatar">A</span>
                 <span id="currentUser">未登录</span>
                 <button class="logout-btn" onclick="logout()" title="退出登录">
@@ -23,6 +24,9 @@
                 </button>
             </span>
         </div>
+
+        <!-- 会话生命周期横幅：即将失效 / 已失效 / 网络中断 -->
+        <div id="sessionBanner" class="session-banner hidden"></div>
 
         <h1>CloudVault</h1>
         <p class="subtitle">安全、快速、可靠的文件传输平台</p>
@@ -66,14 +70,14 @@
         <div id="authModal" class="modal">
             <div class="modal-content">
                 <h2>身份验证</h2>
-                <p>请输入您的凭据以继续下载</p>
+                <p id="authHint">请输入您的凭据以继续当前操作</p>
                 <form id="authForm">
                     <input type="text" id="username" placeholder="用户名" required autocomplete="username">
                     <input type="password" id="password" placeholder="密码" required autocomplete="current-password">
                     <input type="hidden" id="downloadFileId">
                     <div class="modal-buttons">
                         <button type="button" class="btn-secondary" onclick="closeAuthModal()">取消</button>
-                        <button type="submit" class="btn-primary">验证</button>
+                        <button type="submit" class="btn-primary" id="authSubmitBtn">验证</button>
                     </div>
                     <div id="authError" class="error-msg"></div>
                 </form>
@@ -112,7 +116,7 @@
                 
                 <div class="modal-buttons">
                     <button type="button" class="btn-secondary" onclick="closeShareModal()">取消</button>
-                    <button type="button" class="btn-primary" onclick="confirmCreateShare()">生成链接</button>
+                    <button type="button" class="btn-primary" id="createShareBtn" onclick="confirmCreateShare()">生成链接</button>
                 </div>
                 <div id="shareError" class="error-msg"></div>
             </div>
@@ -158,6 +162,7 @@
         </div>
     </div>
     <script src="config.js"></script>
+    <script src="session.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

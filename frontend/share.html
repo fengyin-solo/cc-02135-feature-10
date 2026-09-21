@@ -71,6 +71,8 @@
         const API_BASE = CONFIG.API_BASE;
         let currentShareId = null;
         let shareInfo = null;
+        let downloading = false; // 防重复点击：避免同一分享被重复扣减下载次数
+        let loadingInfo = false;
 
         // 显示加载动画
         function showLoading(text = '加载中...') {
@@ -127,32 +129,39 @@
 
         // 获取分享链接信息
         async function loadShareInfo() {
+            // 切页回来/下载后刷新会并发调用，去重避免状态抖动
+            if (loadingInfo) return loadingInfo;
             // 从 URL hash 获取 share_id
             currentShareId = window.location.hash.substring(1);
-            
+
             if (!currentShareId) {
                 showError('无效链接', '请检查您的分享链接是否完整');
                 return;
             }
 
-            try {
-                const response = await fetch(`${API_BASE}/share/${currentShareId}`);
-                shareInfo = await response.json();
+            loadingInfo = (async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/share/${currentShareId}`);
+                    shareInfo = await response.json();
 
-                if (!response.ok) {
-                    showError('链接不存在', '该分享链接不存在');
-                    return;
+                    if (!response.ok) {
+                        showError('链接不存在', '该分享链接不存在');
+                        return;
+                    }
+
+                    if (!shareInfo.is_valid) {
+                        showError('链接已失效', shareInfo.error_msg || '该分享链接已过期或下载次数已用完');
+                        return;
+                    }
+
+                    showShareContent(shareInfo);
+                } catch (error) {
+                    showError('加载失败', `网络连接中断，请检查网络后重试`);
+                } finally {
+                    loadingInfo = null;
                 }
-
-                if (!shareInfo.is_valid) {
-                    showError('链接已失效', shareInfo.error_msg || '该分享链接已过期或下载次数已用完');
-                    return;
-                }
-
-                showShareContent(shareInfo);
-            } catch (error) {
-                showError('加载失败', `无法加载分享信息: ${error.message}`);
-            }
+            })();
+            return loadingInfo;
         }
 
         // 显示错误状态
@@ -180,17 +189,23 @@
         // 下载文件
         async function downloadFile() {
             if (!currentShareId) return;
+            // 重复点击防护：请求在途时忽略，保证下载次数不被重复扣减
+            if (downloading) return;
+            downloading = true;
 
+            const downloadBtn = document.getElementById('downloadBtn');
+            downloadBtn.disabled = true;
             showLoading('准备下载...');
 
             try {
                 const response = await fetch(`${API_BASE}/share/${currentShareId}/download`);
-                
+
                 if (!response.ok) {
-                    const result = await response.json();
+                    let result = {};
+                    try { result = await response.json(); } catch (e) { /* 忽略空响应体 */ }
                     hideLoading();
                     alert(`下载失败: ${result.error || '未知错误'}`);
-                    
+
                     // 重新加载分享信息，可能是过期了
                     loadShareInfo();
                     return;
@@ -199,7 +214,7 @@
                 const blob = await response.blob();
                 const contentDisposition = response.headers.get('Content-Disposition');
                 let filename = shareInfo ? shareInfo.filename : 'download';
-                
+
                 if (contentDisposition) {
                     const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\n]+)/i);
                     if (match) filename = decodeURIComponent(match[1]);
@@ -222,7 +237,10 @@
                 }, 500);
             } catch (error) {
                 hideLoading();
-                alert(`下载失败: ${error.message}`);
+                alert('下载失败: 网络连接中断，请检查网络后重试');
+            } finally {
+                downloading = false;
+                downloadBtn.disabled = false;
             }
         }
 
