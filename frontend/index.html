@@ -11,10 +11,17 @@
     <div class="container">
         <!-- 用户状态栏 -->
         <div id="userBar" class="user-bar hidden">
-            <span class="user-info">
+            <span class="user-info" id="userInfoPill">
                 <span class="user-avatar" id="userAvatar">A</span>
                 <span id="currentUser">未登录</span>
-                <button class="logout-btn" onclick="logout()" title="退出登录">
+                <!-- 会话生命周期状态标识 -->
+                <span class="session-badge" id="sessionBadge" hidden>
+                    <span class="session-dot"></span>
+                    <span id="sessionBadgeText"></span>
+                </span>
+                <button class="session-renew-btn" id="renewBtn" type="button" title="延长登录" hidden>续期</button>
+                <button class="session-relogin-btn" id="reloginBtn" type="button" title="重新登录" hidden>重新登录</button>
+                <button class="logout-btn" id="logoutBtn" title="退出登录">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                         <polyline points="16 17 21 12 16 7"></polyline>
@@ -65,15 +72,15 @@
         <!-- 身份验证弹窗 -->
         <div id="authModal" class="modal">
             <div class="modal-content">
-                <h2>身份验证</h2>
-                <p>请输入您的凭据以继续下载</p>
+                <h2 id="authModalTitle">身份验证</h2>
+                <p id="authModalSubtitle">请输入您的凭据以继续下载</p>
                 <form id="authForm">
                     <input type="text" id="username" placeholder="用户名" required autocomplete="username">
                     <input type="password" id="password" placeholder="密码" required autocomplete="current-password">
                     <input type="hidden" id="downloadFileId">
                     <div class="modal-buttons">
-                        <button type="button" class="btn-secondary" onclick="closeAuthModal()">取消</button>
-                        <button type="submit" class="btn-primary">验证</button>
+                        <button type="button" class="btn-secondary" id="authCancelBtn">取消</button>
+                        <button type="submit" class="btn-primary" id="authSubmitBtn">验证</button>
                     </div>
                     <div id="authError" class="error-msg"></div>
                 </form>
@@ -158,6 +165,7 @@
         </div>
     </div>
     <script src="config.js"></script>
+    <script src="session.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

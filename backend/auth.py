@@ -40,7 +40,7 @@ def rate_limit(f):
 
 
 def generate_token(username):
-    """生成并存储token"""
+    """生成并存储token，返回 (token, expires_at)"""
     token = str(uuid.uuid4())
     expires_at = time.time() + TOKEN_EXPIRE_SECONDS
 
@@ -52,29 +52,53 @@ def generate_token(username):
     )
     conn.commit()
     conn.close()
-    return token
+    return token, expires_at
 
 
-def verify_token(token):
-    """验证token"""
+def get_token_info(token):
+    """查询令牌信息（只读，不续期）。
+
+    返回 (username, expires_at)；令牌不存在或已过期时返回 (None, None)，
+    过期令牌会被立即删除。
+    """
+    if not token:
+        return None, None
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT expires_at FROM tokens WHERE token = ?', (token,))
+    cursor.execute('SELECT username, expires_at FROM tokens WHERE token = ?', (token,))
     row = cursor.fetchone()
 
     if row and row['expires_at'] > time.time():
         conn.close()
-        return True
+        return row['username'], row['expires_at']
 
     if row:
         cursor.execute('DELETE FROM tokens WHERE token = ?', (token,))
         conn.commit()
     conn.close()
-    return False
+    return None, None
+
+
+def revoke_token(token):
+    """作废旧令牌（主动退出），幂等"""
+    if not token:
+        return
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM tokens WHERE token = ?', (token,))
+    conn.commit()
+    conn.close()
+
+
+def verify_token(token):
+    """验证token（只读校验，不续期）"""
+    username, _ = get_token_info(token)
+    return username is not None
 
 
 def refresh_token(token):
-    """刷新token过期时间"""
+    """刷新token过期时间，成功返回新的过期时间戳，失败返回 None"""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('SELECT expires_at FROM tokens WHERE token = ?', (token,))
@@ -85,9 +109,9 @@ def refresh_token(token):
         cursor.execute('UPDATE tokens SET expires_at = ? WHERE token = ?', (new_expires, token))
         conn.commit()
         conn.close()
-        return True
+        return new_expires
     conn.close()
-    return False
+    return None
 
 
 def authenticate_user(username, password):
@@ -107,17 +131,8 @@ def authenticate_user(username, password):
 
 def get_username_from_token(token):
     """从 token 获取用户名"""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT username, expires_at FROM tokens WHERE token = ?', (token,))
-    row = cursor.fetchone()
-
-    if row and row['expires_at'] > time.time():
-        conn.close()
-        return row['username']
-
-    conn.close()
-    return None
+    username, _ = get_token_info(token)
+    return username
 
 
 def login_required(f):
